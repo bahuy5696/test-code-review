@@ -3,69 +3,75 @@
 namespace App\Storage;
 
 use App\Model;
+use Doctrine\ORM\EntityManager;
 
 class DataStorage
 {
-    /**
-     * @var \PDO 
-     */
-    public $pdo;
 
-    public function __construct()
-    {
-        $this->pdo = new \PDO('mysql:dbname=task_tracker;host=127.0.0.1', 'user');
+  /**
+   * @var EntityManager
+   */
+  private $em;
+
+  public function __construct(EntityManager $em)
+  {
+    $this->em = $em;
+  }
+
+  /**
+   * @param int $projectId
+   * @return Model\Project
+   * @throws Model\NotFoundException
+   */
+  public function getProjectById($projectId)
+  {
+    $project = $this->em->find(Model\Project::class, $projectId);
+    if (!$project) {
+      throw new Model\NotFoundException();
     }
 
-    /**
-     * @param int $projectId
-     * @throws Model\NotFoundException
-     */
-    public function getProjectById($projectId)
-    {
-        $stmt = $this->pdo->query('SELECT * FROM project WHERE id = ' . (int) $projectId);
+    return $project;
+  }
 
-        if ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            return new Model\Project($row);
-        }
+  /**
+   * @param int $project_id
+   * @param int $limit
+   * @param int $offset
+   * @return array
+   */
+  public function getTasksByProjectId(int $project_id, $limit, $offset): array
+  {
+    $limit = is_numeric($limit) ? (int)$limit : 10;
+    $offset = is_numeric($offset) ? (int)$offset : 0;
 
-        throw new Model\NotFoundException();
-    }
+    $tasks = $this->em->getRepository(Model\Task::class)->findBy(
+      ['project_id' => $project_id],
+      ['id' => 'ASC'],
+      max(1, $limit),
+      max(0, $offset)
+    );
 
-    /**
-     * @param int $project_id
-     * @param int $limit
-     * @param int $offset
-     */
-    public function getTasksByProjectId(int $project_id, $limit, $offset)
-    {
-        $stmt = $this->pdo->query("SELECT * FROM task WHERE project_id = $project_id LIMIT ?, ?");
-        $stmt->execute([$limit, $offset]);
+    return array_map(function ($task) {
+      return $task->jsonSerialize();
+    }, $tasks);
+  }
 
-        $tasks = [];
-        foreach ($stmt->fetchAll() as $row) {
-            $tasks[] = new Model\Task($row);
-        }
+  /**
+   * @param array $data
+   * @param int $projectId
+   * @return Model\Task
+   */
+  public function createTask(array $data, $projectId): Model\Task
+  {
+    $task = new Model\Task();
 
-        return $tasks;
-    }
+    $task->setProjectId((int)$projectId);
+    $task->setTitle($data['title'] ?? '');
+    $task->setStatus($data['status'] ?? 'PENDING');
 
-    /**
-     * @param array $data
-     * @param int $projectId
-     * @return Model\Task
-     */
-    public function createTask(array $data, $projectId)
-    {
-        $data['project_id'] = $projectId;
+    $this->em->persist($task);
+    $this->em->flush();
 
-        $fields = implode(',', array_keys($data));
-        $values = implode(',', array_map(function ($v) {
-            return is_string($v) ? '"' . $v . '"' : $v;
-        }, $data));
-
-        $this->pdo->query("INSERT INTO task ($fields) VALUES ($values)");
-        $data['id'] = $this->pdo->query('SELECT MAX(id) FROM task')->fetchColumn();
-
-        return new Model\Task($data);
-    }
+    return $task;
+  }
 }

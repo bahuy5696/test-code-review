@@ -1,3 +1,7 @@
+# How to run
+- Copy env.example to .env
+- Run composer install
+
 # REST API for managing project and tasks
 
 The API to manage project ans tasks in Database

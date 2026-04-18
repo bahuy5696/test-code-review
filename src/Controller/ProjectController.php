@@ -1,74 +1,93 @@
 <?php
 
-namespace Api\Controller;
+namespace App\Controller;
 
 use App\Model;
 use App\Storage\DataStorage;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
 
-class ProjectController 
+class ProjectController
 {
-    /**
-     * @var DataStorage
-     */
-    private $storage;
+  /**
+   * @var DataStorage
+   */
+  private $storage;
 
-    public function __construct(DataStorage $storage)
-    {
-        $this->storage = $storage;
+  public function __construct(DataStorage $storage)
+  {
+    $this->storage = $storage;
+  }
+
+  /**
+   * @param Request $request
+   *
+   * @return JsonResponse
+   * @Route("/project/{id}", name="project", methods={"GET"})
+   */
+  public function projectAction(Request $request): JsonResponse
+  {
+    try {
+      $project = $this->storage->getProjectById($request->get('id'));
+      return new JsonResponse($project->jsonSerialize(), 200);
+    } catch (Model\NotFoundException $e) {
+      return new JsonResponse(['error' => 'Not found'], 404);
+    } catch (\Throwable $e) {
+      return new JsonResponse(['error' => 'Something went wrong'], 500);
+    }
+  }
+
+  /**
+   * @param Request $request
+   *
+   * @return JsonResponse
+   * @Route("/project/{id}/tasks", name="project-tasks", methods={"GET"})
+   */
+  public function projectTaskPagerAction(Request $request): JsonResponse
+  {
+    try {
+      $tasks = $this->storage->getTasksByProjectId(
+        $request->get('id'),
+        $request->get('limit'),
+        $request->get('offset')
+      );
+    } catch (\Throwable $e) {
+      return new JsonResponse(['error' => 'Something went wrong'], 500);
     }
 
-    /**
-     * @param Request $request
-     * 
-     * @Route("/project/{id}", name="project", method="GET")
-     */
-    public function projectAction(Request $request)
-    {
-        try {
-            $project = $this->storage->getProjectById($request->get('id'));
+    return new JsonResponse($tasks, 200);
+  }
 
-            return new Response($project->toJson());
-        } catch (Model\NotFoundException $e) {
-            return new Response('Not found', 404);
-        } catch (\Throwable $e) {
-            return new Response('Something went wrong', 500);
-        }
+  /**
+   * @param Request $request
+   *
+   * @return JsonResponse
+   * @Route("/project/{id}/tasks", name="project-create-task", methods={"POST"})
+   */
+  public function projectCreateTaskAction(Request $request): JsonResponse
+  {
+    try {
+      $project = $this->storage->getProjectById($request->get('id'));
+    } catch (Model\NotFoundException $e) {
+      return new JsonResponse(['error' => 'Not found project'], 404);
+    } catch (\Throwable $e) {
+      return new JsonResponse(['error' => 'Something went wrong'], 500);
     }
 
-    /**
-     * @param Request $request
-     *
-     * @Route("/project/{id}/tasks", name="project-tasks", method="GET")
-     */
-    public function projectTaskPagerAction(Request $request)
-    {
-        $tasks = $this->storage->getTasksByProjectId(
-            $request->get('id'),
-            $request->get('limit'),
-            $request->get('offset')
-        );
+    $payload = $request->request->all();
 
-        return new Response(json_encode($tasks));
+    //Validation
+    $title = isset($payload['title']) ? trim((string) $payload['title']) : '';
+    if ($title == '') {
+      return new JsonResponse(['error' => "title is required"], 400);
     }
 
-    /**
-     * @param Request $request
-     *
-     * @Route("/project/{id}/tasks", name="project-create-task", method="PUT")
-     */
-    public function projectCreateTaskAction(Request $request)
-    {
-		$project = $this->storage->getProjectById($request->get('id'));
-		if (!$project) {
-			return new JsonResponse(['error' => 'Not found']);
-		}
-		
-		return new JsonResponse(
-			$this->storage->createTask($_REQUEST, $project->getId())
-		);
-    }
+    $this->storage->createTask($payload, $project->getId());
+
+    return new JsonResponse(
+      [],
+      201
+    );
+  }
 }
